@@ -1,11 +1,7 @@
 const { createDb } = require('./db/connection');
 const { runMigrations } = require('./db/migrate');
 const { TELEGRAM_BOT_USERNAME } = require('./config/env');
-const { UsersRepository } = require('./repositories/usersRepository');
-const { RequestsRepository } = require('./repositories/requestsRepository');
-const { ResponsesRepository } = require('./repositories/responsesRepository');
-const { CallbackTokensRepository } = require('./repositories/callbackTokensRepository');
-const { StatusEventsRepository } = require('./repositories/statusEventsRepository');
+const { createRepositories } = require('./repositories');
 const { UsersService } = require('./services/usersService');
 const { RequestsService } = require('./services/requestsService');
 const { ResponsesService } = require('./services/responsesService');
@@ -21,12 +17,13 @@ const { createRouter } = require('./routes/router');
 
 function buildApp(db = createDb()) {
   runMigrations(db);
+  const Repositories = createRepositories(db);
 
-  const usersRepository = new UsersRepository(db);
-  const requestsRepository = new RequestsRepository(db);
-  const responsesRepository = new ResponsesRepository(db);
-  const statusEventsRepository = new StatusEventsRepository(db);
-  const callbackTokensRepository = new CallbackTokensRepository(db);
+  const usersRepository = new Repositories.UsersRepository(db);
+  const requestsRepository = new Repositories.RequestsRepository(db);
+  const responsesRepository = new Repositories.ResponsesRepository(db);
+  const statusEventsRepository = new Repositories.StatusEventsRepository(db);
+  const callbackTokensRepository = new Repositories.CallbackTokensRepository(db);
 
   const usersService = new UsersService(usersRepository);
   const requestsService = new RequestsService({ requestsRepository, usersRepository, statusEventsRepository, botUsername: TELEGRAM_BOT_USERNAME });
@@ -55,7 +52,8 @@ function buildApp(db = createDb()) {
       expireRequestsService,
       statusEventsRepository
     },
-    db
+    db,
+    close() { db.close(); }
   };
 }
 

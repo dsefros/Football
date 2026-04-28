@@ -1,8 +1,8 @@
 const { buildApp } = require('../app');
 const { tracker_type, game_type, location_mode, level, payment_type } = require('../domain/enums');
 
-function setup() {
-  const { services } = buildApp();
+function setup(db) {
+  const { services } = buildApp(db);
   const author = services.usersService.telegramUpsert({ telegram_user_id: '1', telegram_username: 'author_u', display_name: 'Author User', first_name: 'Author' });
   const responder = services.usersService.telegramUpsert({ telegram_user_id: '2', telegram_username: 'resp_u', display_name: 'Resp User', first_name: 'Resp' });
   return { services, author, responder };
