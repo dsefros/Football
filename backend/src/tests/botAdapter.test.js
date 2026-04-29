@@ -161,3 +161,109 @@ test('duplicate response returns already responded message', () => {
   const second = route.handler({ body: cbUpdate(start2.buttons[0].callback_data, responder.tg) });
   assert.equal(second.text, 'Вы уже откликнулись');
 });
+
+test('list_my shows real responses count and view_responses returns one item', () => {
+  const { services, router } = buildApp();
+  const route = router.resolve('POST', '/telegram/webhook').route;
+
+  const authorTg = 501;
+  const playerTg = 502;
+
+  route.handler({ body: msgUpdate('/start', authorTg) });
+  const author = services.usersService.telegramUpsert({ id: `tg-${authorTg}`, telegram_user_id: String(authorTg), telegram_username: 'a501', display_name: 'A501' });
+  const draft = services.requestsService.createDraft({ author_user_id: author.id, tracker_type: 'TEAM_LOOKING_FOR_PLAYERS', game_type: 'CASUAL' });
+  services.requestsService.updateDraft(draft.id, {
+    event_datetime: new Date(Date.now() + 3600000).toISOString(),
+    expires_at: new Date(Date.now() + 86400000).toISOString(),
+    location_mode: 'DISTRICTS',
+    districts_json: ['NEVSKY'],
+    location_text: 'NEVSKY',
+    formats_json: ['FIVE_A_SIDE'],
+    players_needed_count: 2,
+    accepted_players_count: 0,
+    level: 'AMATEUR',
+    payment_type: 'FREE',
+    price_amount: 0,
+    comment: 'tomorrow'
+  }, author.id);
+  const req = services.requestsService.publish(draft.id, author.id);
+
+  const startDeep = route.handler({ body: msgUpdate(`/start r_${req.share_token}`, playerTg) });
+  const responded = route.handler({ body: cbUpdate(startDeep.buttons[0].callback_data, playerTg) });
+  assert.equal(responded.text, 'Отклик отправлен');
+
+  const menu = route.handler({ body: msgUpdate('/start', authorTg) });
+  const myBtn = menu.buttons.find((b) => b.text === 'Мои заявки');
+  const my = route.handler({ body: cbUpdate(myBtn.callback_data, authorTg) });
+  assert.equal(my.type, 'list_my');
+  assert.match(my.items[0].text, /Откликов: 1/);
+
+  const responses = route.handler({ body: cbUpdate(my.items[0].callback_data, authorTg) });
+  assert.equal(responses.type, 'responses');
+  assert.equal(responses.items.length, 1);
+});
+
+test('empty my requests and empty responses have user-friendly text', () => {
+  const { services, router } = buildApp();
+  const route = router.resolve('POST', '/telegram/webhook').route;
+
+  const noReqUser = 601;
+  const menu0 = route.handler({ body: msgUpdate('/start', noReqUser) });
+  const my0 = route.handler({ body: cbUpdate(menu0.buttons.find((b) => b.text === 'Мои заявки').callback_data, noReqUser) });
+  assert.equal(my0.text, 'У вас пока нет заявок.');
+
+  const authorTg = 602;
+  route.handler({ body: msgUpdate('/start', authorTg) });
+  const author = services.usersService.telegramUpsert({ id: `tg-${authorTg}`, telegram_user_id: String(authorTg), telegram_username: 'a602', display_name: 'A602' });
+  const draft = services.requestsService.createDraft({ author_user_id: author.id, tracker_type: 'TEAM_LOOKING_FOR_PLAYERS', game_type: 'CASUAL' });
+  services.requestsService.updateDraft(draft.id, {
+    event_datetime: new Date(Date.now() + 3600000).toISOString(),
+    expires_at: new Date(Date.now() + 86400000).toISOString(),
+    location_mode: 'DISTRICTS',
+    districts_json: ['NEVSKY'],
+    location_text: 'NEVSKY',
+    formats_json: ['FIVE_A_SIDE'],
+    players_needed_count: 2,
+    accepted_players_count: 0,
+    level: 'AMATEUR',
+    payment_type: 'FREE',
+    price_amount: 0,
+    comment: 'no responses yet'
+  }, author.id);
+  services.requestsService.publish(draft.id, author.id);
+
+  const menu = route.handler({ body: msgUpdate('/start', authorTg) });
+  const my = route.handler({ body: cbUpdate(menu.buttons.find((b) => b.text === 'Мои заявки').callback_data, authorTg) });
+  const resp = route.handler({ body: cbUpdate(my.items[0].callback_data, authorTg) });
+  assert.equal(resp.text, 'По этой заявке пока нет откликов.');
+});
+
+test('deep link request card is readable multiline format', () => {
+  const { services, router } = buildApp();
+  const route = router.resolve('POST', '/telegram/webhook').route;
+
+  const author = services.usersService.telegramUpsert({ telegram_user_id: '701', telegram_username: 'a701', display_name: 'A701' });
+  const draft = services.requestsService.createDraft({ author_user_id: author.id, tracker_type: 'TEAM_LOOKING_FOR_PLAYERS', game_type: 'CASUAL' });
+  services.requestsService.updateDraft(draft.id, {
+    event_datetime: new Date(Date.now() + 3600000).toISOString(),
+    expires_at: new Date(Date.now() + 86400000).toISOString(),
+    location_mode: 'DISTRICTS',
+    districts_json: ['NEVSKY'],
+    location_text: 'NEVSKY',
+    formats_json: ['FIVE_A_SIDE'],
+    players_needed_count: 2,
+    accepted_players_count: 1,
+    level: 'AMATEUR',
+    payment_type: 'FREE',
+    price_amount: 0,
+    comment: 'tomorrow'
+  }, author.id);
+  const req = services.requestsService.publish(draft.id, author.id);
+
+  const start = route.handler({ body: msgUpdate(`/start r_${req.share_token}`, 702) });
+  assert.match(start.text, /⚽/);
+  assert.match(start.text, /Статус:/);
+  assert.match(start.text, /Когда:/);
+  assert.doesNotMatch(start.text, /\|/);
+  assert.doesNotMatch(start.text, /status=/);
+});
