@@ -43,9 +43,35 @@ function createServer(appInstance = buildApp()) {
   });
 }
 
+async function shutdownServer({ server, app, signal }) {
+  console.log(`Received ${signal}, starting graceful shutdown...`);
+  await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  app.close();
+}
+
 if (require.main === module) {
-  const server = createServer();
+  const app = buildApp();
+  const server = createServer(app);
+  let isShuttingDown = false;
+
+  const handleSignal = async (signal) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+
+    try {
+      await shutdownServer({ server, app, signal });
+      console.log('Graceful shutdown complete.');
+      process.exit(0);
+    } catch (error) {
+      console.error('Graceful shutdown failed:', error);
+      process.exit(1);
+    }
+  };
+
+  process.on('SIGINT', () => { handleSignal('SIGINT'); });
+  process.on('SIGTERM', () => { handleSignal('SIGTERM'); });
+
   server.listen(PORT, () => console.log(`Server running on :${PORT}`));
 }
 
-module.exports = { createServer };
+module.exports = { createServer, shutdownServer };
