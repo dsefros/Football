@@ -9,6 +9,9 @@
     "test": "node --test src/tests/*.test.js",
     "lint": "node -e \"console.log('No lint config yet')\"",
     "dev:sqlite": "DB_DRIVER=sqlite DB_PATH=./data/football.sqlite node src/server.js",
-    "test:sqlite": "DB_DRIVER=sqlite DB_PATH=./data/test-football.sqlite node --test src/tests/*.test.js"
+    "test:sqlite": "DB_DRIVER=sqlite DB_PATH=./data/test-football.sqlite node --test src/tests/*.test.js",
+    "smoke": "node scripts/smoke.js",
+    "smoke:sqlite": "BASE_URL=http://localhost:3010 node scripts/smoke.js",
+    "backup:sqlite": "bash scripts/backup-sqlite.sh"
   }
 }

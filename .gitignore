@@ -1,0 +1,8 @@
+# SQLite and local backend data artifacts
+backend/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm

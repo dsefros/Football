@@ -24,6 +24,71 @@ DB_DRIVER=sqlite DB_PATH=./data/football.sqlite npm run migrate
 DB_DRIVER=sqlite DB_PATH=./data/football.sqlite npm run dev
 ```
 
+## Operational checks
+```bash
+cd backend
+npm run smoke
+BASE_URL=http://localhost:3010 npm run smoke
+```
+
+## Health
+- Endpoint: `GET /health`
+- Purpose: process liveness only (HTTP router/server is reachable).
+- It does **not** run DB queries.
+
+Example response:
+```json
+{
+  "ok": true,
+  "service": "football-backend",
+  "storage": "memory",
+  "timestamp": "2026-04-28T00:00:00.000Z"
+}
+```
+
+## Readiness
+- Endpoint: `GET /ready`
+- Purpose: repository + database readiness.
+- Memory mode: validates repositories are initialized.
+- SQLite mode: validates connection (`SELECT 1`) and migration state.
+- Failure returns HTTP `503` with a structured error body.
+
+## SQLite backup
+Run app in sqlite mode:
+```bash
+DB_DRIVER=sqlite DB_PATH=./data/football.sqlite npm run dev
+```
+
+Create backup:
+```bash
+DB_PATH=./data/football.sqlite BACKUP_DIR=./backups npm run backup:sqlite
+```
+
+- Uses `sqlite3` CLI `.backup` command (safe SQLite backup flow).
+- Runs `PRAGMA integrity_check` on the backup file.
+- Fails if source DB is missing or if `sqlite3` is unavailable.
+- Requires `sqlite3` CLI to be installed.
+- Ubuntu/WSL install:
+  ```bash
+  sudo apt update
+  sudo apt install -y sqlite3
+  ```
+
+## SQLite files
+When running with WAL mode, SQLite creates:
+- `football.sqlite`
+- `football.sqlite-wal`
+- `football.sqlite-shm`
+
+These are runtime artifacts and must not be committed to git.
+
+## Graceful shutdown
+- On `Ctrl+C` (`SIGINT`) or `SIGTERM`, server performs graceful shutdown:
+  - stop accepting new HTTP connections
+  - close HTTP server
+  - close DB handle via `app.close()`
+- Successful shutdown exits with code `0`; failures exit with code `1`.
+
 ## Restart persistence check
 1. Run server in sqlite mode and create/publish request + accept response.
 2. Stop and start again with the same `DB_PATH`.
@@ -44,10 +109,15 @@ DB_DRIVER=sqlite DB_PATH=./data/football.sqlite npm run dev
 - `npm run dev`
 - `npm run dev:sqlite`
 - `npm run test:sqlite`
+- `npm run smoke`
+- `npm run smoke:sqlite`
+- `npm run backup:sqlite`
 
 > `npm run lint` is currently a placeholder script to verify command availability only (no static lint rules yet).
 
 ## HTTP endpoints
+- `GET /health`
+- `GET /ready`
 - `POST /telegram/webhook`
 - `POST /users/telegram-upsert`
 - `GET /users/:user_id/requests`
@@ -76,7 +146,12 @@ DB_DRIVER=sqlite DB_PATH=./data/football.sqlite npm run dev
 - Before ACCEPTED: only display_name may be visible; telegram_username hidden.
 - After ACCEPTED: both request_author and response_author include display_name + telegram_username.
 
-## Limitations
+## Known limitations
 - No auth/session management.
+- No production process manager yet.
+- No Docker deployment yet.
+- No PostgreSQL support.
 - No teams/venues/payments/ratings product modules.
 - No Telegram UX or Mini App changes beyond backend persistence.
+- `node:sqlite` warning/availability may vary depending on Node version/runtime.
+- `npm run lint` remains a placeholder.
