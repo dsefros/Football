@@ -52,7 +52,7 @@ function buildApp(db = createDb()) {
   const responsesService = new ResponsesService({ responsesRepository: repositories.responsesRepository, requestsRepository: repositories.requestsRepository, usersRepository: repositories.usersRepository, statusEventsRepository: repositories.statusEventsRepository, requestsService });
   const telegramCallbacksService = new TelegramCallbacksService(repositories.callbackTokensRepository);
   const expireRequestsService = new ExpireRequestsService(requestsService, responsesService);
-  const botAdapter = new BotAdapter({ requestsService, telegramCallbacksService });
+  const botAdapter = new BotAdapter({ requestsService, responsesService, usersService, telegramCallbacksService, botUsername: TELEGRAM_BOT_USERNAME });
 
   function checkReadiness() {
     const repositoriesReady = hasCoreRepositories(repositories);
