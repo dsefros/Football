@@ -14,14 +14,24 @@
 - `DB_DRIVER=sqlite`: runtime state is persisted to SQLite file defined by `DB_PATH`.
 
 ### Environment
+1. Create local config: `cp .env.example .env`.
+2. Edit `.env` values for your machine.
+3. Runtime priority: existing shell `process.env` values override `.env` file values.
+
+Key variables:
+- `PORT=3010`
 - `DB_DRIVER=sqlite|memory`
 - `DB_PATH=./data/football.sqlite`
+- `TELEGRAM_BOT_TOKEN=...`
+- `TELEGRAM_BOT_USERNAME=FootballMvpBot`
+- `PUBLIC_BASE_URL=https://...`
+- `TELEGRAM_TRANSPORT_ENABLED=true|false`
 
 ## SQLite quickstart
 ```bash
 cd backend
-DB_DRIVER=sqlite DB_PATH=./data/football.sqlite npm run migrate
-DB_DRIVER=sqlite DB_PATH=./data/football.sqlite npm run dev
+npm run migrate
+npm run dev
 ```
 
 ## Operational checks
@@ -190,3 +200,8 @@ Then use tunnel HTTPS URL as `PUBLIC_BASE_URL` in `setWebhook`.
 cd backend
 PORT=3010 DB_DRIVER=sqlite DB_PATH=./data/football.sqlite TELEGRAM_BOT_TOKEN=... TELEGRAM_BOT_USERNAME=... npm run dev
 ```
+
+
+## Telegram webhook notes
+- Configure webhook with `PUBLIC_BASE_URL` and `TELEGRAM_BOT_TOKEN`.
+- Tunnels from ngrok/cloudflared are temporary. Every URL change requires re-running `setWebhook` with the new HTTPS URL.

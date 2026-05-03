@@ -6,3 +6,6 @@ backend/data/
 *.db
 *.db-wal
 *.db-shm
+
+.env
+backend/.env
