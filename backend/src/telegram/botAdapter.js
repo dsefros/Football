@@ -1,6 +1,7 @@
 const { AppError } = require('../domain/errors');
 const { tracker_type } = require('../domain/enums');
 const { getState, setState, clearState } = require('./conversationState');
+const renderer = require('./responseRenderer');
 
 const TEAM_FLOW = {
   START: 'team.players_needed',
@@ -40,23 +41,19 @@ class BotAdapter {
       try {
         req = this.requestsService.getByToken(payload.slice(2));
       } catch (err) {
-        return { type: 'safe_error', text: 'Заявка не найдена или недоступна' };
+        return renderer.safeError('Заявка не найдена или недоступна');
       }
       const cb = this.telegramCallbacksService.createToken({ action: 'respond_to_request', request_id: req.id, actor_user_id: ctx.user.id });
-      return { type: 'request_card', text: this.renderRequest(req), buttons: [{ text: 'Откликнуться', callback_data: cb }] };
+      return renderer.requestCard(req, [{ text: 'Откликнуться', callback_data: cb }]);
     }
 
     clearState(ctx.telegramUserId);
-    return {
-      type: 'menu',
-      text: 'Выберите действие',
-      buttons: [
+    return renderer.mainMenu([
         { text: 'Ищу где поиграть', callback_data: this.telegramCallbacksService.createToken({ action: 'create_player_request', actor_user_id: ctx.user.id }) },
         { text: 'Ищу игроков на сбор', callback_data: this.telegramCallbacksService.createToken({ action: 'create_team_request', actor_user_id: ctx.user.id }) },
         { text: 'Активные заявки', callback_data: this.telegramCallbacksService.createToken({ action: 'list_active', actor_user_id: ctx.user.id }) },
         { text: 'Мои заявки', callback_data: this.telegramCallbacksService.createToken({ action: 'list_my', actor_user_id: ctx.user.id }) }
-      ]
-    };
+      ]);
   }
 
   handleText(update) {
@@ -78,7 +75,7 @@ class BotAdapter {
     if (state.step === TEAM_FLOW.ZONE) {
       const payload = { ...state.payload, zone: text.toUpperCase(), districts_json: [text.toUpperCase()] };
       setState(ctx.telegramUserId, { ...state, step: TEAM_FLOW.CONFIRM, payload });
-      return { type: 'confirm', text: `Подтвердить публикацию?\nИгроков нужно: ${payload.players_needed_count}\nКогда: ${payload.comment}\nРайон: ${payload.zone}`, buttons: this.buildConfirmButtons(ctx.user.id) };
+      return renderer.confirmDialog(`Подтвердить публикацию?\nИгроков нужно: ${payload.players_needed_count}\nКогда: ${payload.comment}\nРайон: ${payload.zone}`, this.buildConfirmButtons(ctx.user.id));
     }
     if (state.step === PLAYER_FLOW.START) {
       const parsed = Number(text);
@@ -89,7 +86,7 @@ class BotAdapter {
     if (state.step === PLAYER_FLOW.WHEN) {
       const payload = { ...state.payload, event_datetime_from: this.isoOrNull(text), comment: text };
       setState(ctx.telegramUserId, { ...state, step: PLAYER_FLOW.CONFIRM, payload });
-      return { type: 'confirm', text: `Подтвердить публикацию?\nИгроков: ${payload.players_count}\nКогда: ${payload.comment}`, buttons: this.buildConfirmButtons(ctx.user.id) };
+      return renderer.confirmDialog(`Подтвердить публикацию?\nИгроков: ${payload.players_count}\nКогда: ${payload.comment}`, this.buildConfirmButtons(ctx.user.id));
     }
 
     return { type: 'noop' };
@@ -110,18 +107,18 @@ class BotAdapter {
     }
     if (token.action === 'cancel') {
       clearState(actorTelegramId);
-      return { type: 'cancelled', text: 'Операция отменена' };
+      return renderer.cancelled();
     }
     if (token.action === 'confirm_create') {
       const state = getState(actorTelegramId);
       if (!state) throw new AppError('VALIDATION_ERROR', 'No active conversation');
       const created = this.createAndPublish(ctx.user.id, state.payload);
       clearState(actorTelegramId);
-      return { type: 'published', text: `Заявка опубликована\nhttps://t.me/${this.botUsername}?start=r_${created.share_token}` };
+      return renderer.success('published', `Заявка опубликована\nhttps://t.me/${this.botUsername}?start=r_${created.share_token}`);
     }
     if (token.action === 'list_active') {
-      const items = this.requestsService.getActive({}).slice(0, 5).map((req) => ({ text: this.renderRequest(req), callback_data: this.telegramCallbacksService.createToken({ action: 'respond_to_request', request_id: req.id, actor_user_id: ctx.user.id }) }));
-      return { type: 'list_active', items };
+      const items = this.requestsService.getActive({}).slice(0, 5).map((req) => ({ text: renderer.requestCardText(req), callback_data: this.telegramCallbacksService.createToken({ action: 'respond_to_request', request_id: req.id, actor_user_id: ctx.user.id }) }));
+      return renderer.activeRequestsList(items);
     }
     if (token.action === 'respond_to_request') {
       try {
@@ -130,11 +127,14 @@ class BotAdapter {
         if (err.code === 'DUPLICATE_RESPONSE') return { type: 'response_sent', text: 'Вы уже откликнулись' };
         throw err;
       }
-      return { type: 'response_sent', text: 'Отклик отправлен' };
+      return renderer.success('response_sent', 'Отклик отправлен');
     }
     if (token.action === 'list_my') {
-      const items = this.requestsService.getMyRequests(ctx.user.id).map((req) => ({ text: `${this.renderRequest(req)}\nОткликов: ${req.responses_count || 0}`, callback_data: this.telegramCallbacksService.createToken({ action: 'view_responses', request_id: req.id, actor_user_id: ctx.user.id }) }));
-      return { type: 'list_my', items };
+      const items = this.requestsService.getMyRequests(ctx.user.id).map((req) => {
+        const responsesCount = this.responsesService.listByRequest(req.id, ctx.user.id).length;
+        return { text: `${renderer.requestCardText(req)}\nОткликов: ${responsesCount}`, callback_data: this.telegramCallbacksService.createToken({ action: 'view_responses', request_id: req.id, actor_user_id: ctx.user.id }) };
+      });
+      return renderer.myRequestsList(items);
     }
     if (token.action === 'view_responses') {
       const items = this.responsesService.listByRequest(token.request_id, ctx.user.id).map((r) => ({
@@ -142,15 +142,15 @@ class BotAdapter {
         accept_cb: this.telegramCallbacksService.createToken({ action: 'accept_response', response_id: r.id, actor_user_id: ctx.user.id }),
         decline_cb: this.telegramCallbacksService.createToken({ action: 'decline_response', response_id: r.id, actor_user_id: ctx.user.id })
       }));
-      return { type: 'responses', items };
+      return renderer.responsesList(items);
     }
     if (token.action === 'accept_response') {
       const accepted = this.responsesService.accept(token.response_id, ctx.user.id);
-      return { type: 'response_accepted', text: `Отклик принят\nКонтакт: @${accepted.response_author.telegram_username || 'unknown'}` };
+      return renderer.success('response_accepted', `Отклик принят\nКонтакт: @${accepted.response_author.telegram_username || 'unknown'}`);
     }
     if (token.action === 'decline_response') {
       this.responsesService.decline(token.response_id, ctx.user.id);
-      return { type: 'response_declined', text: 'Отклик отклонен' };
+      return renderer.success('response_declined', 'Отклик отклонен');
     }
 
     return { type: 'callback', action: token.action, payload: token.payload };
@@ -180,10 +180,5 @@ class BotAdapter {
   contextFromUser(from) { return { telegramUserId: String(from.id), user: this.usersService.telegramUpsert({ id: `tg-${from.id}`, telegram_user_id: String(from.id), telegram_username: from.username || null, display_name: from.first_name || `tg-${from.id}` }) }; }
   isoOrNull(text) { const d = new Date(text); return Number.isNaN(d.getTime()) ? null : d.toISOString(); }
   safeFutureIso() { return new Date(Date.now() + 24 * 3600 * 1000).toISOString(); }
-  renderRequest(req) {
-    const players = req.players_needed_count ? `нужно игроков: ${req.players_needed_count}` : `игроков: ${req.players_count || '-'}`
-    const dt = req.event_datetime || req.event_datetime_from || req.event_datetime_to || 'время не указано';
-    return `${req.tracker_type} | ${players} | ${dt} | status=${req.status}`;
-  }
 }
 module.exports = { BotAdapter };
