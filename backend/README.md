@@ -155,3 +155,38 @@ These are runtime artifacts and must not be committed to git.
 - No Telegram UX or Mini App changes beyond backend persistence.
 - `node:sqlite` warning/availability may vary depending on Node version/runtime.
 - `npm run lint` remains a placeholder.
+
+## Telegram webhook transport
+- This backend uses **webhook-only Telegram transport** (no polling in this project).
+- Production-grade Docker/deployment hardening is still out of scope for now.
+
+### Telegram environment variables
+- `TELEGRAM_BOT_TOKEN=<your_bot_token>`
+- `TELEGRAM_BOT_USERNAME=<your_bot_username_without_@>`
+
+### Webhook setup
+```bash
+curl -s "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" -d "url=$PUBLIC_BASE_URL/telegram/webhook" | jq
+```
+
+### Webhook status check
+```bash
+curl -s "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo" | jq
+```
+
+### Local tunnel examples
+```bash
+# ngrok
+ngrok http 3010
+
+# cloudflared
+cloudflared tunnel --url http://localhost:3010
+```
+
+Then use tunnel HTTPS URL as `PUBLIC_BASE_URL` in `setWebhook`.
+
+### Local run with Telegram transport
+```bash
+cd backend
+PORT=3010 DB_DRIVER=sqlite DB_PATH=./data/football.sqlite TELEGRAM_BOT_TOKEN=... TELEGRAM_BOT_USERNAME=... npm run dev
+```

@@ -1,6 +1,6 @@
 const { createDb } = require('./db/connection');
 const { runMigrations, listMigrationFiles } = require('./db/migrate');
-const { TELEGRAM_BOT_USERNAME } = require('./config/env');
+const { TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME } = require('./config/env');
 const { createRepositories } = require('./repositories');
 const { UsersService } = require('./services/usersService');
 const { RequestsService } = require('./services/requestsService');
@@ -8,6 +8,8 @@ const { ResponsesService } = require('./services/responsesService');
 const { TelegramCallbacksService } = require('./services/telegramCallbacksService');
 const { ExpireRequestsService } = require('./services/expireRequestsService');
 const { BotAdapter } = require('./telegram/botAdapter');
+const { TelegramApiClient } = require('./telegram/telegramApiClient');
+const { TelegramResponseDelivery } = require('./telegram/telegramResponseDelivery');
 const { buildUsersRoutes } = require('./routes/usersRoutes');
 const { buildRequestsRoutes } = require('./routes/requestsRoutes');
 const { buildResponsesRoutes } = require('./routes/responsesRoutes');
@@ -35,7 +37,7 @@ function checkSqliteMigrations(db) {
   return migrationRows.length >= expected.length;
 }
 
-function buildApp(db = createDb()) {
+function buildApp(db = createDb(), options = {}) {
   runMigrations(db);
   const Repositories = createRepositories(db);
 
@@ -53,6 +55,8 @@ function buildApp(db = createDb()) {
   const telegramCallbacksService = new TelegramCallbacksService(repositories.callbackTokensRepository);
   const expireRequestsService = new ExpireRequestsService(requestsService, responsesService);
   const botAdapter = new BotAdapter({ requestsService, responsesService, usersService, telegramCallbacksService, botUsername: TELEGRAM_BOT_USERNAME });
+  const telegramApiClient = options.telegramApiClient || new TelegramApiClient({ botToken: TELEGRAM_BOT_TOKEN, enabled: !options.disableTelegramTransport });
+  const telegramResponseDelivery = options.telegramResponseDelivery || new TelegramResponseDelivery({ apiClient: telegramApiClient, logger: options.logger || console });
 
   function checkReadiness() {
     const repositoriesReady = hasCoreRepositories(repositories);
@@ -82,7 +86,7 @@ function buildApp(db = createDb()) {
 
   const routes = [
     ...buildOperationalRoutes({ serviceName: 'football-backend', getStorageMode: () => db.driver, checkReadiness }),
-    ...buildTelegramRoutes({ botAdapter }),
+    ...buildTelegramRoutes({ botAdapter, telegramResponseDelivery, logger: options.logger || console }),
     ...buildUsersRoutes({ usersService, requestsService }),
     ...buildRequestsRoutes({ requestsService, responsesService }),
     ...buildResponsesRoutes({ responsesService }),
