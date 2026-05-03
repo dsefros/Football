@@ -3,6 +3,7 @@ const { URL } = require('url');
 const { buildApp } = require('./app');
 const { PORT } = require('./config/env');
 const { AppError, asErrorBody, httpStatusFromCode } = require('./domain/errors');
+const { resolveAuth } = require('./auth');
 
 function parseJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -32,7 +33,8 @@ function createServer(appInstance = buildApp()) {
     try {
       const body = ['POST', 'PATCH'].includes(req.method) ? await parseJsonBody(req) : {};
       const query = Object.fromEntries(url.searchParams.entries());
-      const result = await match.route.handler({ params: match.params, body, query });
+      const auth = resolveAuth(req.headers);
+      const result = await match.route.handler({ params: match.params, body, query, headers: req.headers, auth });
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(result));
     } catch (err) {

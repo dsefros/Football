@@ -12,6 +12,7 @@ function asErrorBody(err) {
 
 function httpStatusFromCode(code) {
   if (code === 'NOT_FOUND') return 404;
+  if (code === 'UNAUTHORIZED') return 401;
   if (code === 'FORBIDDEN' || code === 'CANNOT_RESPOND_TO_OWN_REQUEST' || code === 'CONTACTS_NOT_VISIBLE') return 403;
   if (code === 'INVALID_STATUS_TRANSITION' || code === 'VALIDATION_ERROR' || code === 'REQUEST_EXPIRED' || code === 'NO_AVAILABLE_SLOTS' || code === 'DUPLICATE_RESPONSE') return 400;
   if (code === 'SERVICE_UNAVAILABLE') return 503;

@@ -16,6 +16,7 @@ function createMemoryDb() {
       requestEvents: [],
       responseEvents: []
     },
+    transaction(fn) { return fn(); },
     close() {}
   };
 }
@@ -32,6 +33,7 @@ function createSqliteDb(dbPath) {
   fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
 
   const sqlite = new DatabaseSync(resolvedPath);
+  let transactionDepth = 0;
   sqlite.exec('PRAGMA foreign_keys = ON;');
   try {
     sqlite.exec('PRAGMA journal_mode = WAL;');
@@ -43,6 +45,21 @@ function createSqliteDb(dbPath) {
     driver: 'sqlite',
     path: resolvedPath,
     sqlite,
+    transaction(fn) {
+      if (transactionDepth > 0) return fn();
+      transactionDepth += 1;
+      sqlite.exec('BEGIN');
+      try {
+        const result = fn();
+        sqlite.exec('COMMIT');
+        return result;
+      } catch (error) {
+        sqlite.exec('ROLLBACK');
+        throw error;
+      } finally {
+        transactionDepth -= 1;
+      }
+    },
     close() { sqlite.close(); }
   };
 }

@@ -5,7 +5,8 @@ const { assertResponseTransition } = require('../domain/statusTransitions');
 const { request_status, response_status, tracker_type } = require('../domain/enums');
 
 class ResponsesService {
-  constructor({ responsesRepository, requestsRepository, usersRepository, statusEventsRepository, requestsService }) {
+  constructor({ db, responsesRepository, requestsRepository, usersRepository, statusEventsRepository, requestsService }) {
+    this.db = db;
     this.responsesRepository = responsesRepository;
     this.requestsRepository = requestsRepository;
     this.usersRepository = usersRepository;
@@ -51,10 +52,12 @@ class ResponsesService {
       expired_at: null
     };
 
-    const created = this.responsesRepository.create(row);
-    this.logEvent(created.id, null, response_status.REQUESTED, actorUserId, 'create');
-    this.requestsService.applyFirstResponseStatusIfNeeded(requestId);
-    return created;
+    return this.db.transaction(() => {
+      const created = this.responsesRepository.create(row);
+      this.logEvent(created.id, null, response_status.REQUESTED, actorUserId, 'create');
+      this.requestsService.applyFirstResponseStatusIfNeeded(requestId);
+      return created;
+    });
   }
 
   listByRequest(requestId, actorUserId) {
@@ -76,7 +79,8 @@ class ResponsesService {
       }
     }
 
-    const updated = this.responsesRepository.updateStatus(responseId, response_status.ACCEPTED, { accepted_at: new Date().toISOString() });
+    return this.db.transaction(() => {
+      const updated = this.responsesRepository.updateStatus(responseId, response_status.ACCEPTED, { accepted_at: new Date().toISOString() });
     this.logEvent(responseId, response.status, response_status.ACCEPTED, actorUserId, 'accept');
 
     if (req.tracker_type === tracker_type.TEAM_LOOKING_FOR_PLAYERS) {
@@ -89,6 +93,7 @@ class ResponsesService {
     }
 
     return this.withContacts(updated, req);
+    });
   }
 
   decline(responseId, actorUserId) {
@@ -101,10 +106,12 @@ class ResponsesService {
     const target = response_status.CANCELLED_BY_USER;
     assertResponseTransition(response.status, target);
     const prev = { ...response };
-    const updated = this.responsesRepository.updateStatus(responseId, target, { cancelled_at: new Date().toISOString() });
-    this.logEvent(responseId, prev.status, target, actorUserId, 'cancel_by_user');
-    this.adjustAcceptedCountIfNeeded(prev, target);
-    return updated;
+    return this.db.transaction(() => {
+      const updated = this.responsesRepository.updateStatus(responseId, target, { cancelled_at: new Date().toISOString() });
+      this.logEvent(responseId, prev.status, target, actorUserId, 'cancel_by_user');
+      this.adjustAcceptedCountIfNeeded(prev, target);
+      return updated;
+    });
   }
 
   cancelByAuthor(responseId, actorUserId) {
@@ -128,10 +135,12 @@ class ResponsesService {
     if (req.author_user_id !== actorUserId) throw new AppError('FORBIDDEN', 'Only request author allowed');
     assertResponseTransition(response.status, targetStatus);
     const prev = { ...response };
-    const updated = this.responsesRepository.updateStatus(responseId, targetStatus, { [stampField]: new Date().toISOString() });
-    this.logEvent(responseId, prev.status, targetStatus, actorUserId, reason);
-    this.adjustAcceptedCountIfNeeded(prev, targetStatus);
-    return updated;
+    return this.db.transaction(() => {
+      const updated = this.responsesRepository.updateStatus(responseId, targetStatus, { [stampField]: new Date().toISOString() });
+      this.logEvent(responseId, prev.status, targetStatus, actorUserId, reason);
+      this.adjustAcceptedCountIfNeeded(prev, targetStatus);
+      return updated;
+    });
   }
 
   adjustAcceptedCountIfNeeded(previousResponse, targetStatus) {

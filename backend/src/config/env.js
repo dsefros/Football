@@ -25,6 +25,11 @@ function loadDotEnv() {
 
 loadDotEnv();
 
+const API_AUTH_MODE = process.env.API_AUTH_MODE || 'dev-header';
+if (!['dev-header', 'disabled'].includes(API_AUTH_MODE)) {
+  throw new Error(`Unsupported API_AUTH_MODE: ${API_AUTH_MODE}`);
+}
+
 module.exports = {
   PORT: Number(process.env.PORT || 3000),
   DB_DRIVER: process.env.DB_DRIVER || 'memory',
@@ -33,5 +38,6 @@ module.exports = {
   TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME || 'FootballMvpBot',
   APP_BASE_URL: process.env.APP_BASE_URL || process.env.PUBLIC_BASE_URL || null,
   PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || null,
-  TELEGRAM_TRANSPORT_ENABLED: process.env.TELEGRAM_TRANSPORT_ENABLED !== 'false'
+  TELEGRAM_TRANSPORT_ENABLED: process.env.TELEGRAM_TRANSPORT_ENABLED !== 'false',
+  API_AUTH_MODE
 };

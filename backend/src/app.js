@@ -50,10 +50,10 @@ function buildApp(db = createDb(), options = {}) {
   };
 
   const usersService = new UsersService(repositories.usersRepository);
-  const requestsService = new RequestsService({ requestsRepository: repositories.requestsRepository, usersRepository: repositories.usersRepository, statusEventsRepository: repositories.statusEventsRepository, botUsername: TELEGRAM_BOT_USERNAME });
-  const responsesService = new ResponsesService({ responsesRepository: repositories.responsesRepository, requestsRepository: repositories.requestsRepository, usersRepository: repositories.usersRepository, statusEventsRepository: repositories.statusEventsRepository, requestsService });
+  const requestsService = new RequestsService({ db, requestsRepository: repositories.requestsRepository, usersRepository: repositories.usersRepository, statusEventsRepository: repositories.statusEventsRepository, botUsername: TELEGRAM_BOT_USERNAME });
+  const responsesService = new ResponsesService({ db, responsesRepository: repositories.responsesRepository, requestsRepository: repositories.requestsRepository, usersRepository: repositories.usersRepository, statusEventsRepository: repositories.statusEventsRepository, requestsService });
   const telegramCallbacksService = new TelegramCallbacksService(repositories.callbackTokensRepository);
-  const expireRequestsService = new ExpireRequestsService(requestsService, responsesService);
+  const expireRequestsService = new ExpireRequestsService(db, requestsService, responsesService);
   const botAdapter = new BotAdapter({ requestsService, responsesService, usersService, telegramCallbacksService, botUsername: TELEGRAM_BOT_USERNAME });
   const transportEnabled = TELEGRAM_TRANSPORT_ENABLED && !options.disableTelegramTransport;
   const telegramApiClient = options.telegramApiClient || new TelegramApiClient({ botToken: TELEGRAM_BOT_TOKEN, enabled: transportEnabled });
