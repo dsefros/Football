@@ -47,9 +47,6 @@ function requestCardText(req) {
     `Принято: ${accepted} / ${total || 'не указано'}`,
     `Когда: ${formatDate(when)}`,
     `Район: ${req.zone || (Array.isArray(req.districts_json) ? req.districts_json.join(', ') : null) || req.location_text || 'не указано'}`,
-    `Формат: ${Array.isArray(req.formats_json) ? req.formats_json.join(', ') : (req.game_type || 'не указано')}`,
-    `Уровень: ${req.level || 'не указано'}`,
-    `Оплата: ${mapPayment(req.payment_type)}`,
     `Комментарий: ${req.comment || '—'}`
   ].join('\n');
 }
@@ -62,7 +59,7 @@ function activeRequestsList(items) {
 }
 function myRequestsList(items) {
   if (items.length === 0) return { type: 'list_my', text: 'У вас пока нет заявок.', items: [] };
-  return { type: 'list_my', text: 'Ваши заявки:', items };
+  return { type: 'list_my', text: `Ваши заявки (${items.length}):`, items };
 }
 function responsesList(items) {
   if (items.length === 0) return { type: 'responses', text: 'По этой заявке пока нет откликов.', items: [] };

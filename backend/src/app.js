@@ -1,6 +1,6 @@
 const { createDb } = require('./db/connection');
 const { runMigrations, listMigrationFiles } = require('./db/migrate');
-const { TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME } = require('./config/env');
+const { TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME, TELEGRAM_TRANSPORT_ENABLED } = require('./config/env');
 const { createRepositories } = require('./repositories');
 const { UsersService } = require('./services/usersService');
 const { RequestsService } = require('./services/requestsService');
@@ -55,7 +55,8 @@ function buildApp(db = createDb(), options = {}) {
   const telegramCallbacksService = new TelegramCallbacksService(repositories.callbackTokensRepository);
   const expireRequestsService = new ExpireRequestsService(requestsService, responsesService);
   const botAdapter = new BotAdapter({ requestsService, responsesService, usersService, telegramCallbacksService, botUsername: TELEGRAM_BOT_USERNAME });
-  const telegramApiClient = options.telegramApiClient || new TelegramApiClient({ botToken: TELEGRAM_BOT_TOKEN, enabled: !options.disableTelegramTransport });
+  const transportEnabled = TELEGRAM_TRANSPORT_ENABLED && !options.disableTelegramTransport;
+  const telegramApiClient = options.telegramApiClient || new TelegramApiClient({ botToken: TELEGRAM_BOT_TOKEN, enabled: transportEnabled });
   const telegramResponseDelivery = options.telegramResponseDelivery || new TelegramResponseDelivery({ apiClient: telegramApiClient, logger: options.logger || console });
 
   function checkReadiness() {

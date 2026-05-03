@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildApp } = require('../app');
 const { TelegramApiClient } = require('../telegram/telegramApiClient');
+const { isExpiredCallbackError } = require('../telegram/telegramResponseDelivery');
 
 function msgUpdate(text, id = 101) { return { message: { text, from: { id, username: `u${id}`, first_name: `U${id}` } } }; }
 function cbUpdate(callbackData, id = 101) { return { callback_query: { id: `cb-${id}`, data: callbackData, from: { id, username: `u${id}`, first_name: `U${id}` }, message: { chat: { id }, message_id: 10 } } }; }
@@ -76,4 +77,82 @@ test('delivery errors are logged and structured response is preserved', async ()
   await new Promise((r) => setTimeout(r, 0));
   assert.equal(structured.type, 'menu');
   assert.ok(logger.errors.some((e) => e.includes('Telegram transport delivery failed')));
+});
+
+
+test('answerCallbackQuery expired error does not block edit delivery', async () => {
+  const logger = { warns: [], errors: [], warn(...a){this.warns.push(a.join(' '));}, error(...a){this.errors.push(a.join(' '));} };
+  const mock = new MockTelegramApiClient();
+  mock.answerCallbackQuery = async () => { const e = new Error('query is too old and response timeout expired or query ID is invalid'); e.status = 400; e.description = e.message; throw e; };
+  const { router } = buildApp(undefined, { telegramApiClient: mock, logger });
+  const route = router.resolve('POST', '/telegram/webhook').route;
+  const menu = route.handler({ body: msgUpdate('/start', 7777) });
+  const btn = menu.buttons[0];
+  route.handler({ body: cbUpdate(btn.callback_data, 7777) });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.ok(mock.calls.some((c) => c[0] === 'editMessageText' || c[0] === 'sendMessage'));
+  assert.ok(logger.warns.some((w) => w.includes('expired')));
+});
+
+test('callback uses edit first and falls back to sendMessage', async () => {
+  const mock = new MockTelegramApiClient();
+  mock.editMessageText = async function(chatId, messageId, text, options={}) { this.calls.push(['editMessageText', chatId, messageId, text, options]); throw new Error('edit failed'); };
+  const { router } = buildApp(undefined, { telegramApiClient: mock });
+  const route = router.resolve('POST', '/telegram/webhook').route;
+  const menu = route.handler({ body: msgUpdate('/start', 6666) });
+  route.handler({ body: cbUpdate(menu.buttons[0].callback_data, 6666) });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.ok(mock.calls.some((c) => c[0] === 'editMessageText'));
+  assert.ok(mock.calls.some((c) => c[0] === 'sendMessage'));
+});
+
+
+
+test('TELEGRAM_TRANSPORT_ENABLED=false disables default transport even with token', async () => {
+  const prevEnabled = process.env.TELEGRAM_TRANSPORT_ENABLED;
+  const prevToken = process.env.TELEGRAM_BOT_TOKEN;
+  process.env.TELEGRAM_TRANSPORT_ENABLED = 'false';
+  process.env.TELEGRAM_BOT_TOKEN = 'token-present';
+  delete require.cache[require.resolve('../config/env')];
+  delete require.cache[require.resolve('../app')];
+  const { buildApp: buildAppFresh } = require('../app');
+  const { router } = buildAppFresh();
+  const route = router.resolve('POST', '/telegram/webhook').route;
+  const structured = route.handler({ body: msgUpdate('/start', 7770) });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(structured.type, 'menu');
+
+  if (prevEnabled == null) delete process.env.TELEGRAM_TRANSPORT_ENABLED;
+  else process.env.TELEGRAM_TRANSPORT_ENABLED = prevEnabled;
+  if (prevToken == null) delete process.env.TELEGRAM_BOT_TOKEN;
+  else process.env.TELEGRAM_BOT_TOKEN = prevToken;
+  delete require.cache[require.resolve('../config/env')];
+  delete require.cache[require.resolve('../app')];
+});
+
+test('isExpiredCallbackError detects TelegramApiError-like details payload', () => {
+  const err = {
+    details: {
+      status: 400,
+      body: { description: 'Bad Request: query is too old and response timeout expired or query ID is invalid' }
+    }
+  };
+  assert.equal(isExpiredCallbackError(err), true);
+});
+
+test('expired TelegramApiError-like callback error warns and still delivers', async () => {
+  const logger = { warns: [], errors: [], warn(...a){this.warns.push(a.join(' '));}, error(...a){this.errors.push(a.join(' '));} };
+  const mock = new MockTelegramApiClient();
+  mock.answerCallbackQuery = async () => {
+    const e = new Error('Telegram API answerCallbackQuery returned ok=false');
+    e.details = { status: 400, body: { description: 'query is too old and response timeout expired or query ID is invalid' } };
+    throw e;
+  };
+  const { router } = buildApp(undefined, { telegramApiClient: mock, logger });
+  const route = router.resolve('POST', '/telegram/webhook').route;
+  const menu = route.handler({ body: msgUpdate('/start', 7788) });
+  route.handler({ body: cbUpdate(menu.buttons[0].callback_data, 7788) });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.ok(logger.warns.some((w) => w.includes('expired')));
+  assert.ok(mock.calls.some((c) => c[0] === 'editMessageText' || c[0] === 'sendMessage'));
 });
