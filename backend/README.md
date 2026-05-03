@@ -205,3 +205,10 @@ PORT=3010 DB_DRIVER=sqlite DB_PATH=./data/football.sqlite TELEGRAM_BOT_TOKEN=...
 ## Telegram webhook notes
 - Configure webhook with `PUBLIC_BASE_URL` and `TELEGRAM_BOT_TOKEN`.
 - Tunnels from ngrok/cloudflared are temporary. Every URL change requires re-running `setWebhook` with the new HTTPS URL.
+
+## Auth and transactions
+- `API_AUTH_MODE=dev-header|disabled` (default `dev-header`). In `dev-header`, protected HTTP routes require `X-Actor-User-Id`.
+- Protected routes derive actor only from auth context; body/query actor ids are ignored for authorization.
+- `POST /jobs/expire-requests` now requires authenticated actor, but still lacks role/admin guard.
+- Lifecycle multi-write operations are wrapped in DB transactions. SQLite uses real BEGIN/COMMIT/ROLLBACK; memory driver runs best-effort transaction callback without rollback semantics.
+- Telegram request creation wizard is button-first for controlled fields (count/date/time/zone/format/level/payment/position) via callback-token buttons; free text is optional for future comment/location/payment-note extensions.

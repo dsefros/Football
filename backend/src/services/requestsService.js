@@ -6,7 +6,8 @@ const { request_status, tracker_type } = require('../domain/enums');
 const { createPublicSlug, createShareToken, buildShareText, buildShareUrl } = require('./shareLinksService');
 
 class RequestsService {
-  constructor({ requestsRepository, usersRepository, statusEventsRepository, botUsername }) {
+  constructor({ db, requestsRepository, usersRepository, statusEventsRepository, botUsername }) {
+    this.db = db;
     this.requestsRepository = requestsRepository;
     this.usersRepository = usersRepository;
     this.statusEventsRepository = statusEventsRepository;
@@ -97,36 +98,44 @@ class RequestsService {
     if (req.expires_at < new Date().toISOString()) throw new AppError('REQUEST_EXPIRED', 'Cannot publish expired request');
     validateRequestDraft({ ...req, status: request_status.DRAFT });
     assertRequestTransition(req.tracker_type, req.status, request_status.PUBLISHED);
-    const updated = this.requestsRepository.updateStatus(id, request_status.PUBLISHED);
-    this.logEvent(id, req.status, request_status.PUBLISHED, actorUserId, 'publish');
-    const share_url = buildShareUrl(this.botUsername, updated.share_token);
-    return { ...updated, share_url, share_text: buildShareText(share_url) };
+    return this.db.transaction(() => {
+      const updated = this.requestsRepository.updateStatus(id, request_status.PUBLISHED);
+      this.logEvent(id, req.status, request_status.PUBLISHED, actorUserId, 'publish');
+      const share_url = buildShareUrl(this.botUsername, updated.share_token);
+      return { ...updated, share_url, share_text: buildShareText(share_url) };
+    });
   }
 
   close(id, actorUserId) {
     const req = this.requireRequest(id);
     if (req.author_user_id !== actorUserId) throw new AppError('FORBIDDEN', 'Only author can close');
     assertRequestTransition(req.tracker_type, req.status, request_status.CLOSED);
-    const updated = this.requestsRepository.updateStatus(id, request_status.CLOSED, { closed_at: new Date().toISOString() });
-    this.logEvent(id, req.status, request_status.CLOSED, actorUserId, 'close');
-    return updated;
+    return this.db.transaction(() => {
+      const updated = this.requestsRepository.updateStatus(id, request_status.CLOSED, { closed_at: new Date().toISOString() });
+      this.logEvent(id, req.status, request_status.CLOSED, actorUserId, 'close');
+      return updated;
+    });
   }
 
   cancel(id, actorUserId) {
     const req = this.requireRequest(id);
     if (req.author_user_id !== actorUserId) throw new AppError('FORBIDDEN', 'Only author can cancel');
     assertRequestTransition(req.tracker_type, req.status, request_status.CANCELLED);
-    const updated = this.requestsRepository.updateStatus(id, request_status.CANCELLED, { cancelled_at: new Date().toISOString() });
-    this.logEvent(id, req.status, request_status.CANCELLED, actorUserId, 'cancel');
-    return updated;
+    return this.db.transaction(() => {
+      const updated = this.requestsRepository.updateStatus(id, request_status.CANCELLED, { cancelled_at: new Date().toISOString() });
+      this.logEvent(id, req.status, request_status.CANCELLED, actorUserId, 'cancel');
+      return updated;
+    });
   }
 
   markExpired(id) {
     const req = this.requireRequest(id);
     assertRequestTransition(req.tracker_type, req.status, request_status.EXPIRED);
-    const updated = this.requestsRepository.updateStatus(id, request_status.EXPIRED, { expired_at: new Date().toISOString() });
-    this.logEvent(id, req.status, request_status.EXPIRED, null, 'job_expire');
-    return updated;
+    return this.db.transaction(() => {
+      const updated = this.requestsRepository.updateStatus(id, request_status.EXPIRED, { expired_at: new Date().toISOString() });
+      this.logEvent(id, req.status, request_status.EXPIRED, null, 'job_expire');
+      return updated;
+    });
   }
 
   getActive(filters) { return this.requestsRepository.getActive(filters); }

@@ -54,6 +54,9 @@ test('click create_team_request does not fail actor mismatch', () => {
   const res = route.handler({ body: cbUpdate(btn.callback_data, 111) });
   assert.equal(res.type, 'ask');
   assert.equal(res.text, 'Сколько игроков нужно?');
+  assert.ok(Array.isArray(res.buttons) && res.buttons.length >= 6);
+  assert.notEqual(res.text, 'Когда игра? (ISO или текст)');
+  assert.notEqual(res.text, 'Район (например NEVSKY)');
 });
 
 test('callback token actor works in sqlite mode and mismatch is rejected', () => {
@@ -78,31 +81,51 @@ test('callback token actor works in sqlite mode and mismatch is rejected', () =>
   }
 });
 
-test('player creation flow confirms and publishes', () => {
+
+test('weekend preset on sunday past time rolls to weekend, not monday', () => {
+  const RealDate = Date;
+  const fixedNow = new RealDate('2026-05-03T22:30:00.000Z'); // Sunday
+  global.Date = class extends RealDate {
+    constructor(...args) { return args.length ? new RealDate(...args) : new RealDate(fixedNow); }
+    static now() { return fixedNow.getTime(); }
+    static parse(v) { return RealDate.parse(v); }
+    static UTC(...args) { return RealDate.UTC(...args); }
+  };
+
+  try {
+    const { services } = buildApp();
+    const bot = services ? require('../telegram/botAdapter').BotAdapter : null;
+    const adapter = new bot({ requestsService: {}, responsesService: {}, usersService: {}, telegramCallbacksService: {} });
+    const dt = new RealDate(adapter.resolveDateTime('weekend', '21:00'));
+    assert.notEqual(dt.getUTCDay(), 1);
+    assert.ok(dt.getUTCDay() === 6 || dt.getUTCDay() === 0);
+  } finally {
+    global.Date = RealDate;
+  }
+});
+
+test('player creation flow confirms and publishes using only buttons', () => {
   const { router } = buildApp();
   const route = router.resolve('POST', '/telegram/webhook').route;
   const menu = route.handler({ body: msgUpdate('/start', 321) });
-  const createBtn = menu.buttons.find((b) => b.text === 'Ищу где поиграть');
-  route.handler({ body: cbUpdate(createBtn.callback_data, 321) });
-  route.handler({ body: msgUpdate('2', 321) });
-  const confirm = route.handler({ body: msgUpdate('later today', 321) });
-  const confirmBtn = confirm.buttons.find((b) => b.text === 'Подтвердить');
-  const published = route.handler({ body: cbUpdate(confirmBtn.callback_data, 321) });
+  let step = route.handler({ body: cbUpdate(menu.buttons.find((b) => b.text === 'Ищу где поиграть').callback_data, 321) });
+  for (const pick of ['2','Завтра','Вечер','Центр','6x6','Универсал','Любители']) {
+    step = route.handler({ body: cbUpdate(step.buttons.find((b) => b.text === pick).callback_data, 321) });
+  }
+  const published = route.handler({ body: cbUpdate(step.buttons.find((b) => b.text === 'Опубликовать').callback_data, 321) });
   assert.equal(published.type, 'published');
   assert.match(published.text, /r_/);
 });
 
-test('team creation confirm publishes a request', () => {
+test('team creation flow confirms and publishes using only buttons', () => {
   const { router } = buildApp();
   const route = router.resolve('POST', '/telegram/webhook').route;
   const menu = route.handler({ body: msgUpdate('/start', 121) });
-  const createBtn = menu.buttons.find((b) => b.text === 'Ищу игроков на сбор');
-  route.handler({ body: cbUpdate(createBtn.callback_data, 121) });
-  route.handler({ body: msgUpdate('3', 121) });
-  route.handler({ body: msgUpdate('когда угодно', 121) });
-  const confirm = route.handler({ body: msgUpdate('NEVSKY', 121) });
-  const confirmBtn = confirm.buttons.find((b) => b.text === 'Подтвердить');
-  const published = route.handler({ body: cbUpdate(confirmBtn.callback_data, 121) });
+  let step = route.handler({ body: cbUpdate(menu.buttons.find((b) => b.text === 'Ищу игроков на сбор').callback_data, 121) });
+  for (const pick of ['3','Сегодня','20:00','Север','5x5','Средний','Бесплатно']) {
+    step = route.handler({ body: cbUpdate(step.buttons.find((b) => b.text === pick).callback_data, 121) });
+  }
+  const published = route.handler({ body: cbUpdate(step.buttons.find((b) => b.text === 'Опубликовать').callback_data, 121) });
   assert.equal(published.type, 'published');
   assert.match(published.text, /r_/);
 });
@@ -112,14 +135,25 @@ test('clicking cancel clears state', () => {
   const route = router.resolve('POST', '/telegram/webhook').route;
   const menu = route.handler({ body: msgUpdate('/start', 131) });
   const createBtn = menu.buttons.find((b) => b.text === 'Ищу где поиграть');
-  route.handler({ body: cbUpdate(createBtn.callback_data, 131) });
-  route.handler({ body: msgUpdate('2', 131) });
-  const confirm = route.handler({ body: msgUpdate('tomorrow', 131) });
+  const step = route.handler({ body: cbUpdate(createBtn.callback_data, 131) });
+  const confirm = route.handler({ body: cbUpdate(step.buttons.find((b)=>b.text==='2').callback_data, 131) });
   const cancelBtn = confirm.buttons.find((b) => b.text === 'Отмена');
   const cancelled = route.handler({ body: cbUpdate(cancelBtn.callback_data, 131) });
   assert.equal(cancelled.type, 'cancelled');
   const noop = route.handler({ body: msgUpdate('1', 131) });
   assert.equal(noop.type, 'noop');
+});
+
+
+test('text during wizard does not corrupt state', () => {
+  const { router } = buildApp();
+  const route = router.resolve('POST', '/telegram/webhook').route;
+  const menu = route.handler({ body: msgUpdate('/start', 151) });
+  const step = route.handler({ body: cbUpdate(menu.buttons.find((b) => b.text === 'Ищу игроков на сбор').callback_data, 151) });
+  const txt = route.handler({ body: msgUpdate('какой-то текст', 151) });
+  assert.equal(txt.type, 'ask');
+  assert.match(txt.text, /используйте кнопки/i);
+  assert.ok(Array.isArray(txt.buttons));
 });
 
 test('/start r_bad returns safe_error', () => {
